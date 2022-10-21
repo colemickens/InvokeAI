@@ -26,29 +26,19 @@
         "x86_64-linux"
       ];
       forAllSystems = nixlib.genAttrs supportedSystems;
+    in
+    rec {
+      apps = forAllSystems (system:
+        let
+          pkgs = import inputs.nixpkgs {
+            config.allowUnfree = true;
+            config.cudaSupport = true;
+            system = system;
+          };
 
-      pkgs = import nixpkgs {
-        config.allowUnfree = true;
-        system = system;
-        overlays = [
-          (final: prev: {
-            # TODO: I think there's another way to get CUDA now
-            python3 = prev.python3.override {
-              packageOverrides = python-self: python-super: {
-                pytorch = python-super.pytorch.override { cudaSupport = true; };
-              };
-            };
-          })
-        ];
-      };
-
-      python = pkgs.python3;
-      ps = python.pkgs;
-      shell = pkgs.mkShell
-        {
-          packages = [
+          pyenv = pkgs.python3.withPackages (ps: [
             pkgs.cudatoolkit
-            python
+            ps.python
 
             # From conda-forge
             ps.pytorch
@@ -75,47 +65,41 @@
             ps.flask-socketio
 
             ps.idna
-          ];
+          ]);
 
-          LD_LIBRARY_PATH = lib.makeLibraryPath [
+          LD_LIBRARY_PATH = pkgs.lib.makeLibraryPath [
             pkgs.stdenv.cc.cc
           ];
+        in
+        rec {
+          default = {
+            type = "app";
+            program = (pkgs.writeShellScript "run-invoke-ai.sh" ''
+              set -euo pipefail
+            
+              # TODO: need to pull the python packages into scope here
+            
+              export WEIGHTS_stable_diffusion_1_4="''${HF_SD_MODEL}"
 
-          shellHook = ''
-            python3 -m venv venv
-            . venv/bin/activate
+              export PYTHONPATH=${pyenv}/${pyenv.sitePackages}
+              export PATH=$PATH:${pyenv}:${pkgs.python3}/bin
 
-            pip install \
-              -e "git+https://github.com/CompVis/taming-transformers.git@master#egg=taming-transformers" \
-              -e "git+https://github.com/crowsonkb/k-diffusion#egg=k_diffusion" \
-              -e .
-          '';
-          # "albumentations==0.4.3" \
-          # "torch-fidelity==0.3.0" \
-          # "kornia==0.6" \
-          # "imwatermark" \
-          # "diffusers" \
-        };
-    in
-    rec {
-      apps = forAllSystems (system: rec {
-        default = {
-          type = "app";
-          program = pkgs.writeShellScriptBin "run-invoke-ai.sh" ''
-            set -euo pipefail
-            
-            # TODO: need to pull the python packages into scope here
-            
-            export WEIGHTS_stable-diffusion-1_4="${HF_SD_MODEL}"
-            
-            ${customPython} scripts/preload_models.py
-            ${customPython} scripts/invoke.py \
-              --web \
-              --host 0.0.0.0 \
-              --port 7860
-          '';
-        };
-      });
+              python3 -m venv venv
+              . venv/bin/activate
+      
+              pip install \
+                -e "git+https://github.com/CompVis/taming-transformers.git@master#egg=taming-transformers" \
+                -e "git+https://github.com/crowsonkb/k-diffusion#egg=k_diffusion" \
+                -e .
+
+              python3 scripts/preload_models.py
+              python3 scripts/invoke.py \
+                --web \
+                --host 0.0.0.0 \
+                --port 7860
+            '').outPath;
+          };
+        });
     };
 }
 

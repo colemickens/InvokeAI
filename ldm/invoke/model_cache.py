@@ -161,7 +161,7 @@ class ModelCache(object):
         weights = mconfig.weights
         
         # if there's an env var set for WEIGHTS_model_name then try to use it
-        envvar = "WEIGHTS_" + model_name.replace(".", "_")
+        envvar = "WEIGHTS_" + model_name.replace(".", "_").replace("-", "_")
         weights_override = os.environ[envvar]
         if weights_override != "":
             weights = weights_override
